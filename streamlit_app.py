@@ -48,18 +48,17 @@ if st.session_state["admin_logged_in"]:
 
 # --- Helper functions ---
 def fetch_current_season(sport):
-    # Fetch the single season_tracker row for this sport
+    """Fetch current season for the sport. No auto-insert to avoid duplicates."""
     result = supabase.table("season_tracker").select("*").eq("sport", sport).limit(1).execute()
     data = result.data or []
-
     if data:
         return data[0]["current_season"]
     else:
-        # Insert a single row if it doesn't exist
-        supabase_admin.table("season_tracker").insert({"sport": sport, "current_season": 1}).execute()
-        return 1
+        st.error(f"No season found for sport '{sport}'. Please create it in Supabase first.")
+        return 1  # fallback
 
 def fetch_matches(sport, season):
+    """Fetch matches for the given sport and season."""
     result = supabase.table("matches").select("*").eq("sport", sport).eq("season", season).order("date", desc=True).execute()
     return result.data or []
 
@@ -95,12 +94,13 @@ for i, sport in enumerate(sports):
                 st.success("Match added!")
 
             if st.button(f"End Season ({sport})"):
-                # Update the single row for the sport
-                current_season += 1
+                # Increment current season for the sport
+                new_season = current_season + 1
                 supabase_admin.table("season_tracker").update(
-                    {"current_season": current_season}
+                    {"current_season": new_season}
                 ).eq("sport", sport).execute()
-                st.success(f"Season ended. New season is {current_season}")
+                st.success(f"Season ended. New season is {new_season}")
+                current_season = new_season  # update for UI
 
         # --- Fetch current season matches ---
         matches = fetch_matches(sport, current_season)
