@@ -1,6 +1,8 @@
 import streamlit as st
 from datetime import date
 from supabase import create_client
+import pandas as pd
+import altair as alt
 
 # --- Connect to Supabase ---
 url = st.secrets["supabase_url"]
@@ -126,3 +128,36 @@ for i, sport in enumerate(sports):
 
         st.metric(label="T Total Score", value=t_total)
         st.metric(label="D Total Score", value=d_total)
+
+if current_season_matches:
+    df = pd.DataFrame(current_season_matches)
+    
+    if sport.lower() == "tennis":
+        # Tennis: plot cumulative wins
+        df["t_win"] = df.apply(lambda row: 1 if (row.get("theo_score") or 0) > (row.get("denet_score") or 0) else 0, axis=1)
+        df["d_win"] = df.apply(lambda row: 1 if (row.get("denet_score") or 0) > (row.get("theo_score") or 0) else 0, axis=1)
+        df["t_cum"] = df["t_win"].cumsum()
+        df["d_cum"] = df["d_win"].cumsum()
+        chart_data = df[["date", "t_cum", "d_cum"]].copy()
+        chart_data = chart_data.melt(id_vars=["date"], value_vars=["t_cum", "d_cum"], var_name="Player", value_name="Score")
+        chart_data["Player"] = chart_data["Player"].map({"t_cum": "T", "d_cum": "D"})
+    else:
+        # Other sports: cumulative score
+        df["t_cum"] = df["theo_score"].cumsum()
+        df["d_cum"] = df["denet_score"].cumsum()
+        chart_data = df[["date", "t_cum", "d_cum"]].copy()
+        chart_data = chart_data.melt(id_vars=["date"], value_vars=["t_cum", "d_cum"], var_name="Player", value_name="Score")
+        chart_data["Player"] = chart_data["Player"].map({"t_cum": "T", "d_cum": "D"})
+
+    # --- Plot line chart ---
+    st.subheader("Score Over Time")
+    line_chart = alt.Chart(chart_data).mark_line(point=True).encode(
+        x="date:T",
+        y="Score:Q",
+        color="Player:N",
+        tooltip=["date", "Player", "Score"]
+    ).properties(
+        width=700,
+        height=400
+    )
+    st.altair_chart(line_chart)
