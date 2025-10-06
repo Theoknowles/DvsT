@@ -19,8 +19,6 @@ if "admin_logged_in" not in st.session_state:
     st.session_state["admin_logged_in"] = False
 if "user_email" not in st.session_state:
     st.session_state["user_email"] = None
-if "selected_tab" not in st.session_state:
-    st.session_state["selected_tab"] = "Golf"
 if "refresh_data" not in st.session_state:
     st.session_state["refresh_data"] = False
 
@@ -51,82 +49,82 @@ if st.session_state["admin_logged_in"]:
         st.session_state["user_email"] = None
         st.session_state["refresh_data"] = True
 
-# --- Sports selection ---
+# --- Sports tabs ---
 sports = ["Golf", "Driving", "Tennis"]
-st.session_state["selected_tab"] = st.radio("Select Sport", sports, index=sports.index(st.session_state["selected_tab"]))
-sport = st.session_state["selected_tab"]
+tabs = st.tabs(sports)
 
-st.header(f"{sport} Matches")
+for i, sport in enumerate(sports):
+    with tabs[i]:
+        # --- Fetch current season fresh ---
+        season_row = supabase.table("season_tracker").select("*").eq("sport", sport).execute().data
+        if not season_row:
+            supabase_admin.table("season_tracker").insert({"sport": sport, "current_season": 1}).execute()
+            current_season = 1
+        else:
+            current_season = season_row[0]["current_season"]
 
-# --- Fetch current season fresh (no caching) ---
-season_row = supabase.table("season_tracker").select("*").eq("sport", sport).execute().data
-if not season_row:
-    supabase_admin.table("season_tracker").insert({"sport": sport, "current_season": 1}).execute()
-    current_season = 1
-else:
-    current_season = season_row[0]["current_season"]
+        st.subheader(f"{sport} - Current Season: {current_season}")
 
-# --- Cached fetch for matches ---
-@st.cache_data
-def get_matches(sport, season):
-    return supabase.table("matches").select("*").eq("sport", sport).eq("season", season).order("date", desc=True).execute().data
+        # --- Cached fetch for matches ---
+        @st.cache_data
+        def get_matches(sport, season):
+            return supabase.table("matches").select("*").eq("sport", sport).eq("season", season).order("date", desc=True).execute().data
 
-# --- Admin controls ---
-if st.session_state["admin_logged_in"]:
-    st.subheader("Record a new match")
-    col1, col2 = st.columns(2)
-    with col1:
-        theo_score = st.number_input(f"T Score ({sport})", min_value=0, step=1, key=f"t_{sport}")
-    with col2:
-        denet_score = st.number_input(f"D Score ({sport})", min_value=0, step=1, key=f"d_{sport}")
+        matches = get_matches(sport, current_season)
 
-    match_date = st.date_input(f"Match Date ({sport})", value=date.today(), key=f"date_{sport}")
+        # --- Admin controls ---
+        if st.session_state["admin_logged_in"]:
+            st.subheader("Record a new match")
+            col1, col2 = st.columns(2)
+            with col1:
+                theo_score = st.number_input(f"T Score ({sport})", min_value=0, step=1, key=f"t_{sport}")
+            with col2:
+                denet_score = st.number_input(f"D Score ({sport})", min_value=0, step=1, key=f"d_{sport}")
 
-    if st.button(f"Add Match ({sport})"):
-        supabase_admin.table("matches").insert([{
-            "sport": sport,
-            "season": current_season,
-            "date": match_date.isoformat(),
-            "theo_score": theo_score,
-            "denet_score": denet_score
-        }]).execute()
-        st.session_state["refresh_data"] = True
-        st.success("Match added!")
+            match_date = st.date_input(f"Match Date ({sport})", value=date.today(), key=f"date_{sport}")
 
-    if st.button(f"End Season ({sport})"):
-        supabase_admin.table("season_tracker").update(
-            {"current_season": current_season + 1}
-        ).eq("sport", sport).execute()
-        st.session_state["refresh_data"] = True
-        st.success(f"Season ended. New season is {current_season + 1}")
+            if st.button(f"Add Match ({sport})"):
+                supabase_admin.table("matches").insert([{
+                    "sport": sport,
+                    "season": current_season,
+                    "date": match_date.isoformat(),
+                    "theo_score": theo_score,
+                    "denet_score": denet_score
+                }]).execute()
+                st.session_state["refresh_data"] = True
+                st.success("Match added!")
 
-# --- Fetch current season matches ---
-matches = get_matches(sport, current_season)
+            if st.button(f"End Season ({sport})"):
+                supabase_admin.table("season_tracker").update(
+                    {"current_season": current_season + 1}
+                ).eq("sport", sport).execute()
+                st.session_state["refresh_data"] = True
+                st.success(f"Season ended. New season is {current_season + 1}")
 
-# --- Display table ---
-st.subheader("All Matches")
-if matches:
-    df = pd.DataFrame([{
-        "Season": m.get("season"),
-        "Date": m.get("date"),
-        "Theo Score": m.get("theo_score") or 0,
-        "Denet Score": m.get("denet_score") or 0
-    } for m in matches])
-    st.dataframe(df, height=200)
-else:
-    st.write("No matches recorded yet.")
+        # --- Display table ---
+        st.subheader("All Matches")
+        if matches:
+            df = pd.DataFrame([{
+                "Season": m.get("season"),
+                "Date": m.get("date"),
+                "Theo Score": m.get("theo_score") or 0,
+                "Denet Score": m.get("denet_score") or 0
+            } for m in matches])
+            st.dataframe(df, height=200)
+        else:
+            st.write("No matches recorded yet.")
 
-# --- Current season score tracker ---
-st.subheader("Current Season Score Tracker")
-current_season_matches = matches
+        # --- Current season score tracker ---
+        st.subheader("Current Season Score Tracker")
+        current_season_matches = matches
 
-if sport.lower() == "tennis":
-    t_total = sum(1 for m in current_season_matches if (m.get("theo_score") or 0) > (m.get("denet_score") or 0))
-    d_total = sum(1 for m in current_season_matches if (m.get("denet_score") or 0) > (m.get("theo_score") or 0))
-else:
-    t_total = sum(m.get("theo_score") or 0 for m in current_season_matches)
-    d_total = sum(m.get("denet_score") or 0 for m in current_season_matches)
+        if sport.lower() == "tennis":
+            t_total = sum(1 for m in current_season_matches if (m.get("theo_score") or 0) > (m.get("denet_score") or 0))
+            d_total = sum(1 for m in current_season_matches if (m.get("denet_score") or 0) > (m.get("theo_score") or 0))
+        else:
+            t_total = sum(m.get("theo_score") or 0 for m in current_season_matches)
+            d_total = sum(m.get("denet_score") or 0 for m in current_season_matches)
 
-col1, col2 = st.columns(2)
-col1.metric(label="T Total Score", value=t_total)
-col2.metric(label="D Total Score", value=d_total)
+        col1, col2 = st.columns(2)
+        col1.metric(label="T Total Score", value=t_total)
+        col2.metric(label="D Total Score", value=d_total)
