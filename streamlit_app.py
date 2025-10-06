@@ -137,8 +137,8 @@ for i, sport in enumerate(sports):
             d_total = sum(m.get("denet_score") or 0 for m in matches)
 
         col1, col2 = st.columns(2)
-        col1.metric(label="T Total Score", value=t_total)
-        col2.metric(label="D Total Score", value=d_total)
+        col1.metric(label="Theo Total Score", value=t_total)
+        col2.metric(label="Denet Total Score", value=d_total)
 
         # --- Season Wins Tracker ---
         st.subheader("Season Wins Tracker")
