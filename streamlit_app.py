@@ -45,9 +45,8 @@ if st.session_state["admin_logged_in"]:
     if st.sidebar.button("Logout"):
         st.session_state["admin_logged_in"] = False
         st.session_state["user_email"] = None
-        st.rerun()
 
-# --- Helper: fetch current season fresh ---
+# --- Helper functions ---
 def fetch_current_season(sport):
     season_row = supabase.table("season_tracker").select("*").eq("sport", sport).execute().data
     if not season_row:
@@ -55,10 +54,9 @@ def fetch_current_season(sport):
         return 1
     return season_row[0]["current_season"]
 
-# --- Cached fetch for matches ---
-@st.cache_data
-def get_matches(sport, season):
-    return supabase.table("matches").select("*").eq("sport", sport).eq("season", season).order("date", desc=True).execute().data
+def fetch_matches(sport, season):
+    result = supabase.table("matches").select("*").eq("sport", sport).eq("season", season).order("date", desc=True).execute()
+    return result.data or []
 
 # --- Sports tabs ---
 sports = ["Golf", "Driving", "Tennis"]
@@ -66,7 +64,7 @@ tabs = st.tabs(sports)
 
 for i, sport in enumerate(sports):
     with tabs[i]:
-        # --- Current season (fresh) ---
+        # --- Fetch current season ---
         current_season = fetch_current_season(sport)
         st.subheader(f"{sport} - Current Season: {current_season}")
 
@@ -90,17 +88,15 @@ for i, sport in enumerate(sports):
                     "denet_score": denet_score
                 }]).execute()
                 st.success("Match added!")
-                st.rerun()  # Refresh data immediately
 
             if st.button(f"End Season ({sport})"):
                 supabase_admin.table("season_tracker").update(
                     {"current_season": current_season + 1}
                 ).eq("sport", sport).execute()
                 st.success(f"Season ended. New season is {current_season + 1}")
-                st.rerun()  # Refresh header immediately
 
-        # --- Fetch current season matches ---
-        matches = get_matches(sport, current_season)
+        # --- Fetch matches for current season ---
+        matches = fetch_matches(sport, current_season)
 
         # --- Display table ---
         st.subheader("All Matches")
@@ -117,14 +113,12 @@ for i, sport in enumerate(sports):
 
         # --- Current season score tracker ---
         st.subheader("Current Season Score Tracker")
-        current_season_matches = matches
-
         if sport.lower() == "tennis":
-            t_total = sum(1 for m in current_season_matches if (m.get("theo_score") or 0) > (m.get("denet_score") or 0))
-            d_total = sum(1 for m in current_season_matches if (m.get("denet_score") or 0) > (m.get("theo_score") or 0))
+            t_total = sum(1 for m in matches if (m.get("theo_score") or 0) > (m.get("denet_score") or 0))
+            d_total = sum(1 for m in matches if (m.get("denet_score") or 0) > (m.get("theo_score") or 0))
         else:
-            t_total = sum(m.get("theo_score") or 0 for m in current_season_matches)
-            d_total = sum(m.get("denet_score") or 0 for m in current_season_matches)
+            t_total = sum(m.get("theo_score") or 0 for m in matches)
+            d_total = sum(m.get("denet_score") or 0 for m in matches)
 
         col1, col2 = st.columns(2)
         col1.metric(label="T Total Score", value=t_total)
