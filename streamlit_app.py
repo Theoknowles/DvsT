@@ -19,8 +19,6 @@ if "admin_logged_in" not in st.session_state:
     st.session_state["admin_logged_in"] = False
 if "user_email" not in st.session_state:
     st.session_state["user_email"] = None
-if "refresh_data" not in st.session_state:
-    st.session_state["refresh_data"] = False
 
 # --- Admin login ---
 if not st.session_state["admin_logged_in"]:
@@ -47,7 +45,20 @@ if st.session_state["admin_logged_in"]:
     if st.sidebar.button("Logout"):
         st.session_state["admin_logged_in"] = False
         st.session_state["user_email"] = None
-        st.session_state["refresh_data"] = True
+        st.experimental_rerun()
+
+# --- Helper: fetch current season fresh ---
+def fetch_current_season(sport):
+    season_row = supabase.table("season_tracker").select("*").eq("sport", sport).execute().data
+    if not season_row:
+        supabase_admin.table("season_tracker").insert({"sport": sport, "current_season": 1}).execute()
+        return 1
+    return season_row[0]["current_season"]
+
+# --- Cached fetch for matches ---
+@st.cache_data
+def get_matches(sport, season):
+    return supabase.table("matches").select("*").eq("sport", sport).eq("season", season).order("date", desc=True).execute().data
 
 # --- Sports tabs ---
 sports = ["Golf", "Driving", "Tennis"]
@@ -55,22 +66,9 @@ tabs = st.tabs(sports)
 
 for i, sport in enumerate(sports):
     with tabs[i]:
-        # --- Fetch current season fresh ---
-        season_row = supabase.table("season_tracker").select("*").eq("sport", sport).execute().data
-        if not season_row:
-            supabase_admin.table("season_tracker").insert({"sport": sport, "current_season": 1}).execute()
-            current_season = 1
-        else:
-            current_season = season_row[0]["current_season"]
-
+        # --- Current season (fresh) ---
+        current_season = fetch_current_season(sport)
         st.subheader(f"{sport} - Current Season: {current_season}")
-
-        # --- Cached fetch for matches ---
-        @st.cache_data
-        def get_matches(sport, season):
-            return supabase.table("matches").select("*").eq("sport", sport).eq("season", season).order("date", desc=True).execute().data
-
-        matches = get_matches(sport, current_season)
 
         # --- Admin controls ---
         if st.session_state["admin_logged_in"]:
@@ -91,15 +89,18 @@ for i, sport in enumerate(sports):
                     "theo_score": theo_score,
                     "denet_score": denet_score
                 }]).execute()
-                st.session_state["refresh_data"] = True
                 st.success("Match added!")
+                st.experimental_rerun()  # Refresh data immediately
 
             if st.button(f"End Season ({sport})"):
                 supabase_admin.table("season_tracker").update(
                     {"current_season": current_season + 1}
                 ).eq("sport", sport).execute()
-                st.session_state["refresh_data"] = True
                 st.success(f"Season ended. New season is {current_season + 1}")
+                st.experimental_rerun()  # Refresh header immediately
+
+        # --- Fetch current season matches ---
+        matches = get_matches(sport, current_season)
 
         # --- Display table ---
         st.subheader("All Matches")
