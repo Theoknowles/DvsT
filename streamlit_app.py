@@ -50,7 +50,7 @@ if st.sidebar.button("Logout"):
     st.experimental_rerun()
 
 # --- Multi-sport tabs ---
-sports = ["Tennis", "Ping Pong", "Badminton"]  # Add more if needed
+sports = ["Golf", "Driving", "Tennis"]  # Add more if needed
 tabs = st.tabs(sports)
 
 for i, sport in enumerate(sports):
