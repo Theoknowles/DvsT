@@ -96,27 +96,24 @@ for i, sport in enumerate(sports):
                 st.success(f"Season ended. New season is {current_season + 1}")
                 st.rerun()
 
-        # --- Display raw data (debugging) ---
-        st.subheader("Raw Data from Supabase")
-        raw_matches_response = supabase.table("matches").select("*").eq("sport", sport).order("date", desc=True).execute()
-        raw_matches = raw_matches_response.data
-        st.write(raw_matches)  # Shows exactly what Supabase returned
-
         # --- Display formatted table ---
         st.subheader("All Matches")
-        if raw_matches:
+        matches_response = supabase.table("matches").select("*").eq("sport", sport).order("date", desc=True).execute()
+        matches = matches_response.data
+
+        if matches:
             st.table([{
                 "Season": m.get("season"),
                 "Date": m.get("date"),
                 "Theo Score": m.get("theo_score") if m.get("theo_score") is not None else 0,
                 "Denet Score": m.get("denet_score") if m.get("denet_score") is not None else 0
-            } for m in raw_matches])
+            } for m in matches])
         else:
             st.write("No matches recorded yet.")
 
         # --- Current season score tracker ---
         st.subheader("Current Season Score Tracker")
-        current_season_matches = [m for m in raw_matches if m.get("season") == current_season]
+        current_season_matches = [m for m in matches if m.get("season") == current_season]
         t_total = sum(int(m.get("theo_score") or 0) for m in current_season_matches)
         d_total = sum(int(m.get("denet_score") or 0) for m in current_season_matches)
 
