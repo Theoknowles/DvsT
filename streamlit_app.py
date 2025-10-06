@@ -114,8 +114,15 @@ for i, sport in enumerate(sports):
         # --- Current season score tracker ---
         st.subheader("Current Season Score Tracker")
         current_season_matches = [m for m in matches if m.get("season") == current_season]
-        t_total = sum(int(m.get("theo_score") or 0) for m in current_season_matches)
-        d_total = sum(int(m.get("denet_score") or 0) for m in current_season_matches)
+
+        if sport.lower() == "tennis":
+            # Tennis: count number of matches won
+            t_total = sum(1 for m in current_season_matches if (m.get("theo_score") or 0) > (m.get("denet_score") or 0))
+            d_total = sum(1 for m in current_season_matches if (m.get("denet_score") or 0) > (m.get("theo_score") or 0))
+        else:
+            # Other sports: sum raw scores
+            t_total = sum(int(m.get("theo_score") or 0) for m in current_season_matches)
+            d_total = sum(int(m.get("denet_score") or 0) for m in current_season_matches)
 
         st.metric(label="T Total Score", value=t_total)
         st.metric(label="D Total Score", value=d_total)
