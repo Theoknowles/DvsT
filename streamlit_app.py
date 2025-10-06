@@ -48,11 +48,17 @@ if st.session_state["admin_logged_in"]:
 
 # --- Helper functions ---
 def fetch_current_season(sport):
-    season_row = supabase.table("season_tracker").select("*").eq("sport", sport).execute().data
-    if not season_row:
+    # Get the maximum current_season for this sport
+    result = supabase.table("season_tracker").select("current_season").eq("sport", sport).order("current_season", desc=True).limit(1).execute()
+    data = result.data or []
+
+    if data:
+        return data[0]["current_season"]
+    else:
+        # Only insert a single row if there is no season yet
         supabase_admin.table("season_tracker").insert({"sport": sport, "current_season": 1}).execute()
         return 1
-    return season_row[0]["current_season"]
+
 
 def fetch_matches(sport, season):
     result = supabase.table("matches").select("*").eq("sport", sport).eq("season", season).order("date", desc=True).execute()
