@@ -50,7 +50,7 @@ if st.session_state["admin_logged_in"]:
         st.rerun()
 
 # --- Multi-sport tabs ---
-sports = ["Golf", "Driving", "Tennis"]  # Add more if needed
+sports = ["Golf", "Driving", "Tennis"]
 tabs = st.tabs(sports)
 
 for i, sport in enumerate(sports):
@@ -103,19 +103,19 @@ for i, sport in enumerate(sports):
 
         if matches:
             st.table([{
-                "Season": m["season"],
-                "Date": m["date"],
-                "Theo Score": m["theo_score"],
-                "Denet Score": m["denet_score"]
+                "Season": m.get("season"),
+                "Date": m.get("date"),
+                "Theo Score": m.get("theo_score") or 0,
+                "Denet Score": m.get("denet_score") or 0
             } for m in matches])
         else:
             st.write("No matches recorded yet.")
 
         # --- Current season score tracker ---
         st.subheader("Current Season Score Tracker")
-        current_season_matches = [m for m in matches if m["season"] == current_season]
-        t_total = sum(m["theo_score"] for m in current_season_matches)
-        d_total = sum(m["denet_score"] for m in current_season_matches)
+        current_season_matches = [m for m in matches if m.get("season") == current_season]
+        t_total = sum(int(m.get("theo_score") or 0) for m in current_season_matches)
+        d_total = sum(int(m.get("denet_score") or 0) for m in current_season_matches)
 
         st.metric(label="T Total Score", value=t_total)
         st.metric(label="D Total Score", value=d_total)
