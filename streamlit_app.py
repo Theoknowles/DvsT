@@ -9,33 +9,48 @@ service_key = st.secrets["supabase_service_key"]
 admin_email = st.secrets["admin_email"]
 
 # Clients
-supabase = create_client(url, anon_key)           # For auth & read
-supabase_admin = create_client(url, service_key)  # For write operations
+supabase = create_client(url, anon_key)           # For auth & reads
+supabase_admin = create_client(url, service_key)  # For writes (admin only)
 
 st.title("Multi-Sport Score Tracker: D vs T")
 
-# --- Admin login ---
+# --- Session state for login ---
 if "admin_logged_in" not in st.session_state:
     st.session_state["admin_logged_in"] = False
+if "user_email" not in st.session_state:
+    st.session_state["user_email"] = None
 
+# --- Admin login ---
 if not st.session_state["admin_logged_in"]:
     st.subheader("Admin Login")
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
+
     if st.button("Login"):
         try:
-            user = supabase.auth.sign_in(email=email, password=password)
-            if user.user.email == admin_email:
+            auth_response = supabase.auth.sign_in_with_password(
+                {"email": email, "password": password}
+            )
+            if auth_response.user and auth_response.user.email == admin_email:
                 st.session_state["admin_logged_in"] = True
+                st.session_state["user_email"] = auth_response.user.email
                 st.success("Logged in as admin!")
             else:
                 st.error("You are not authorized to modify data.")
         except Exception as e:
             st.error("Login failed: " + str(e))
-    st.stop()  # Stop rendering rest of app until logged in
+
+    st.stop()  # Stop app here until logged in
+
+# --- Logout button ---
+st.sidebar.write(f"Logged in as: {st.session_state['user_email']}")
+if st.sidebar.button("Logout"):
+    st.session_state["admin_logged_in"] = False
+    st.session_state["user_email"] = None
+    st.experimental_rerun()
 
 # --- Multi-sport tabs ---
-sports = ["Tennis", "Ping Pong", "Badminton"]
+sports = ["Tennis", "Ping Pong", "Badminton"]  # Add more if needed
 tabs = st.tabs(sports)
 
 for i, sport in enumerate(sports):
@@ -63,23 +78,23 @@ for i, sport in enumerate(sports):
         match_date = st.date_input(f"Match Date ({sport})", value=date.today(), key=f"date_{sport}")
 
         if st.button(f"Add Match ({sport})"):
-            if st.session_state["admin_logged_in"]:
-                supabase_admin.table("matches").insert([{
-                    "sport": sport,
-                    "season": current_season,
-                    "date": match_date,
-                    "t_score": t_score,
-                    "d_score": d_score
-                }]).execute()
-                st.success("Match added!")
-                st.experimental_rerun()
+            supabase_admin.table("matches").insert([{
+                "sport": sport,
+                "season": current_season,
+                "date": match_date.isoformat(),
+                "t_score": t_score,
+                "d_score": d_score
+            }]).execute()
+            st.success("Match added!")
+            st.experimental_rerun()
 
         # --- End the season (admin only) ---
         if st.button(f"End Season ({sport})"):
-            if st.session_state["admin_logged_in"]:
-                supabase_admin.table("season_tracker").update({"current_season": current_season + 1}).eq("sport", sport).execute()
-                st.success(f"Season ended. New season is {current_season + 1}")
-                st.experimental_rerun()
+            supabase_admin.table("season_tracker").update(
+                {"current_season": current_season + 1}
+            ).eq("sport", sport).execute()
+            st.success(f"Season ended. New season is {current_season + 1}")
+            st.experimental_rerun()
 
         # --- Display all matches ---
         st.subheader("All Matches")
