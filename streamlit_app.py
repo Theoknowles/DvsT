@@ -48,8 +48,8 @@ if st.session_state["admin_logged_in"]:
 
 # --- Helper functions ---
 def fetch_current_season(sport):
-    """Fetch maximum current_season for the sport (safe even with multiple rows)."""
-    result = supabase.table("season_tracker")\
+    """Fetch maximum current_season for the sport using admin client (avoids RLS issues)."""
+    result = supabase_admin.table("season_tracker")\
         .select("current_season")\
         .eq("sport", sport)\
         .order("current_season", desc=True)\
@@ -63,14 +63,12 @@ def fetch_current_season(sport):
         st.error(f"No season found for sport '{sport}'. Please create it manually in Supabase.")
         return 1
 
-def fetch_matches(sport, season):
-    """Fetch matches for the given sport and season."""
-    result = supabase.table("matches")\
-        .select("*")\
-        .eq("sport", sport)\
-        .eq("season", season)\
-        .order("date", desc=True)\
-        .execute()
+def fetch_matches(sport, season=None):
+    """Fetch matches for a given sport and optionally a specific season."""
+    query = supabase.table("matches").select("*").eq("sport", sport)
+    if season:
+        query = query.eq("season", season)
+    result = query.order("date", desc=True).execute()
     return result.data or []
 
 # --- Sports tabs ---
@@ -113,7 +111,7 @@ for i, sport in enumerate(sports):
                 st.success(f"Season ended. New season is {new_season}")
                 current_season = new_season
 
-        # --- Fetch matches ---
+        # --- Fetch current season matches ---
         matches = fetch_matches(sport, current_season)
 
         # --- Display table ---
@@ -141,3 +139,29 @@ for i, sport in enumerate(sports):
         col1, col2 = st.columns(2)
         col1.metric(label="T Total Score", value=t_total)
         col2.metric(label="D Total Score", value=d_total)
+
+        # --- Season Wins Tracker ---
+        st.subheader("Season Wins Tracker")
+
+        all_matches = fetch_matches(sport)
+        season_totals = {}
+        for m in all_matches:
+            season = m.get("season")
+            t_score = m.get("theo_score") or 0
+            d_score = m.get("denet_score") or 0
+            if season not in season_totals:
+                season_totals[season] = {"Theo": 0, "Denet": 0}
+            season_totals[season]["Theo"] += t_score
+            season_totals[season]["Denet"] += d_score
+
+        t_wins = 0
+        d_wins = 0
+        for season, scores in season_totals.items():
+            if scores["Theo"] > scores["Denet"]:
+                t_wins += 1
+            elif scores["Denet"] > scores["Theo"]:
+                d_wins += 1
+            # Ties ignored
+
+        st.write(f"🏆 Theo has won **{t_wins}** season(s)")
+        st.write(f"🏆 Denet has won **{d_wins}** season(s)")
