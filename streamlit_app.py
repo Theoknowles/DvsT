@@ -147,6 +147,8 @@ for i, sport in enumerate(sports):
         season_totals = {}
         for m in all_matches:
             season = m.get("season")
+            if season == current_season:
+                continue  # skip current season
             t_score = m.get("theo_score") or 0
             d_score = m.get("denet_score") or 0
             if season not in season_totals:
