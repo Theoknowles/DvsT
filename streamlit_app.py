@@ -71,9 +71,9 @@ for i, sport in enumerate(sports):
         st.subheader("Record a new match")
         col1, col2 = st.columns(2)
         with col1:
-            t_score = st.number_input(f"T Score ({sport})", min_value=0, step=1, key=f"t_{sport}")
+            theo_score = st.number_input(f"T Score ({sport})", min_value=0, step=1, key=f"t_{sport}")
         with col2:
-            d_score = st.number_input(f"D Score ({sport})", min_value=0, step=1, key=f"d_{sport}")
+            denet_score = st.number_input(f"D Score ({sport})", min_value=0, step=1, key=f"d_{sport}")
 
         match_date = st.date_input(f"Match Date ({sport})", value=date.today(), key=f"date_{sport}")
 
@@ -82,8 +82,8 @@ for i, sport in enumerate(sports):
                 "sport": sport,
                 "season": current_season,
                 "date": match_date.isoformat(),
-                "t_score": t_score,
-                "d_score": d_score
+                "theo_score": theo_score,
+                "denet_score": denet_score
             }]).execute()
             st.success("Match added!")
             st.experimental_rerun()
@@ -105,8 +105,8 @@ for i, sport in enumerate(sports):
             st.table([{
                 "Season": m["season"],
                 "Date": m["date"],
-                "T Score": m["t_score"],
-                "D Score": m["d_score"]
+                "Theo Score": m["theo_score"],
+                "Denet Score": m["denet_score"]
             } for m in matches])
         else:
             st.write("No matches recorded yet.")
@@ -114,8 +114,8 @@ for i, sport in enumerate(sports):
         # --- Current season score tracker ---
         st.subheader("Current Season Score Tracker")
         current_season_matches = [m for m in matches if m["season"] == current_season]
-        t_total = sum(m["t_score"] for m in current_season_matches)
-        d_total = sum(m["d_score"] for m in current_season_matches)
+        t_total = sum(m["theo_score"] for m in current_season_matches)
+        d_total = sum(m["denet_score"] for m in current_season_matches)
 
         st.metric(label="T Total Score", value=t_total)
         st.metric(label="D Total Score", value=d_total)
