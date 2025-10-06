@@ -48,17 +48,16 @@ if st.session_state["admin_logged_in"]:
 
 # --- Helper functions ---
 def fetch_current_season(sport):
-    # Get the maximum current_season for this sport
-    result = supabase.table("season_tracker").select("current_season").eq("sport", sport).order("current_season", desc=True).limit(1).execute()
+    # Fetch the single season_tracker row for this sport
+    result = supabase.table("season_tracker").select("*").eq("sport", sport).limit(1).execute()
     data = result.data or []
 
     if data:
         return data[0]["current_season"]
     else:
-        # Only insert a single row if there is no season yet
+        # Insert a single row if it doesn't exist
         supabase_admin.table("season_tracker").insert({"sport": sport, "current_season": 1}).execute()
         return 1
-
 
 def fetch_matches(sport, season):
     result = supabase.table("matches").select("*").eq("sport", sport).eq("season", season).order("date", desc=True).execute()
@@ -70,7 +69,7 @@ tabs = st.tabs(sports)
 
 for i, sport in enumerate(sports):
     with tabs[i]:
-        # --- Fetch current season ---
+        # --- Current season (fresh) ---
         current_season = fetch_current_season(sport)
         st.subheader(f"{sport} - Current Season: {current_season}")
 
@@ -96,12 +95,14 @@ for i, sport in enumerate(sports):
                 st.success("Match added!")
 
             if st.button(f"End Season ({sport})"):
+                # Update the single row for the sport
+                current_season += 1
                 supabase_admin.table("season_tracker").update(
-                    {"current_season": current_season + 1}
+                    {"current_season": current_season}
                 ).eq("sport", sport).execute()
-                st.success(f"Season ended. New season is {current_season + 1}")
+                st.success(f"Season ended. New season is {current_season}")
 
-        # --- Fetch matches for current season ---
+        # --- Fetch current season matches ---
         matches = fetch_matches(sport, current_season)
 
         # --- Display table ---
