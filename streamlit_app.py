@@ -47,7 +47,7 @@ st.sidebar.write(f"Logged in as: {st.session_state['user_email']}")
 if st.sidebar.button("Logout"):
     st.session_state["admin_logged_in"] = False
     st.session_state["user_email"] = None
-    st.experimental_rerun()
+    st.rerun()
 
 # --- Multi-sport tabs ---
 sports = ["Golf", "Driving", "Tennis"]  # Add more if needed
@@ -86,7 +86,7 @@ for i, sport in enumerate(sports):
                 "denet_score": denet_score
             }]).execute()
             st.success("Match added!")
-            st.experimental_rerun()
+            st.rerun()
 
         # --- End the season (admin only) ---
         if st.button(f"End Season ({sport})"):
@@ -94,7 +94,7 @@ for i, sport in enumerate(sports):
                 {"current_season": current_season + 1}
             ).eq("sport", sport).execute()
             st.success(f"Season ended. New season is {current_season + 1}")
-            st.experimental_rerun()
+            st.rerun()
 
         # --- Display all matches ---
         st.subheader("All Matches")
