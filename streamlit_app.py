@@ -48,18 +48,29 @@ if st.session_state["admin_logged_in"]:
 
 # --- Helper functions ---
 def fetch_current_season(sport):
-    """Fetch current season for the sport. No auto-insert to avoid duplicates."""
-    result = supabase.table("season_tracker").select("*").eq("sport", sport).limit(1).execute()
+    """Fetch maximum current_season for the sport (safe even with multiple rows)."""
+    result = supabase.table("season_tracker")\
+        .select("current_season")\
+        .eq("sport", sport)\
+        .order("current_season", desc=True)\
+        .limit(1)\
+        .execute()
     data = result.data or []
+
     if data:
         return data[0]["current_season"]
     else:
-        st.error(f"No season found for sport '{sport}'. Please create it in Supabase first.")
-        return 1  # fallback
+        st.error(f"No season found for sport '{sport}'. Please create it manually in Supabase.")
+        return 1
 
 def fetch_matches(sport, season):
     """Fetch matches for the given sport and season."""
-    result = supabase.table("matches").select("*").eq("sport", sport).eq("season", season).order("date", desc=True).execute()
+    result = supabase.table("matches")\
+        .select("*")\
+        .eq("sport", sport)\
+        .eq("season", season)\
+        .order("date", desc=True)\
+        .execute()
     return result.data or []
 
 # --- Sports tabs ---
@@ -68,7 +79,7 @@ tabs = st.tabs(sports)
 
 for i, sport in enumerate(sports):
     with tabs[i]:
-        # --- Current season (fresh) ---
+        # --- Current season ---
         current_season = fetch_current_season(sport)
         st.subheader(f"{sport} - Current Season: {current_season}")
 
@@ -100,9 +111,9 @@ for i, sport in enumerate(sports):
                     {"current_season": new_season}
                 ).eq("sport", sport).execute()
                 st.success(f"Season ended. New season is {new_season}")
-                current_season = new_season  # update for UI
+                current_season = new_season
 
-        # --- Fetch current season matches ---
+        # --- Fetch matches ---
         matches = fetch_matches(sport, current_season)
 
         # --- Display table ---
