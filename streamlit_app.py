@@ -45,7 +45,7 @@ if st.session_state["admin_logged_in"]:
     if st.sidebar.button("Logout"):
         st.session_state["admin_logged_in"] = False
         st.session_state["user_email"] = None
-        st.experimental_rerun()
+        st.rerun()
 
 # --- Helper: fetch current season fresh ---
 def fetch_current_season(sport):
@@ -90,14 +90,14 @@ for i, sport in enumerate(sports):
                     "denet_score": denet_score
                 }]).execute()
                 st.success("Match added!")
-                st.experimental_rerun()  # Refresh data immediately
+                st.rerun()  # Refresh data immediately
 
             if st.button(f"End Season ({sport})"):
                 supabase_admin.table("season_tracker").update(
                     {"current_season": current_season + 1}
                 ).eq("sport", sport).execute()
                 st.success(f"Season ended. New season is {current_season + 1}")
-                st.experimental_rerun()  # Refresh header immediately
+                st.rerun()  # Refresh header immediately
 
         # --- Fetch current season matches ---
         matches = get_matches(sport, current_season)
