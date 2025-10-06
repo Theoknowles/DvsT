@@ -22,7 +22,7 @@ if "admin_logged_in" not in st.session_state:
 if "user_email" not in st.session_state:
     st.session_state["user_email"] = None
 
-# --- Admin login (does not block page) ---
+# --- Admin login ---
 if not st.session_state["admin_logged_in"]:
     with st.expander("🔒 Admin Login"):
         email = st.text_input("Email")
@@ -43,7 +43,7 @@ if not st.session_state["admin_logged_in"]:
             except Exception as e:
                 st.error("Login failed: " + str(e))
 
-# --- Logout button (only shows when logged in) ---
+# --- Logout button ---
 if st.session_state["admin_logged_in"]:
     st.sidebar.write(f"Logged in as: {st.session_state['user_email']}")
     if st.sidebar.button("Logout"):
@@ -118,7 +118,7 @@ for i, sport in enumerate(sports):
         current_season_matches = [m for m in matches if m.get("season") == current_season]
 
         if sport.lower() == "tennis":
-            # Tennis: count number of matches won
+            # Tennis: count matches won
             t_total = sum(1 for m in current_season_matches if (m.get("theo_score") or 0) > (m.get("denet_score") or 0))
             d_total = sum(1 for m in current_season_matches if (m.get("denet_score") or 0) > (m.get("theo_score") or 0))
         else:
@@ -129,35 +129,35 @@ for i, sport in enumerate(sports):
         st.metric(label="T Total Score", value=t_total)
         st.metric(label="D Total Score", value=d_total)
 
-if current_season_matches:
-    df = pd.DataFrame(current_season_matches)
-    
-    if sport.lower() == "tennis":
-        # Tennis: plot cumulative wins
-        df["t_win"] = df.apply(lambda row: 1 if (row.get("theo_score") or 0) > (row.get("denet_score") or 0) else 0, axis=1)
-        df["d_win"] = df.apply(lambda row: 1 if (row.get("denet_score") or 0) > (row.get("theo_score") or 0) else 0, axis=1)
-        df["t_cum"] = df["t_win"].cumsum()
-        df["d_cum"] = df["d_win"].cumsum()
-        chart_data = df[["date", "t_cum", "d_cum"]].copy()
-        chart_data = chart_data.melt(id_vars=["date"], value_vars=["t_cum", "d_cum"], var_name="Player", value_name="Score")
-        chart_data["Player"] = chart_data["Player"].map({"t_cum": "T", "d_cum": "D"})
-    else:
-        # Other sports: cumulative score
-        df["t_cum"] = df["theo_score"].cumsum()
-        df["d_cum"] = df["denet_score"].cumsum()
-        chart_data = df[["date", "t_cum", "d_cum"]].copy()
-        chart_data = chart_data.melt(id_vars=["date"], value_vars=["t_cum", "d_cum"], var_name="Player", value_name="Score")
-        chart_data["Player"] = chart_data["Player"].map({"t_cum": "T", "d_cum": "D"})
+        # --- Line graph: score over time ---
+        if current_season_matches:
+            df = pd.DataFrame(current_season_matches)
 
-    # --- Plot line chart ---
-    st.subheader("Score Over Time")
-    line_chart = alt.Chart(chart_data).mark_line(point=True).encode(
-        x="date:T",
-        y="Score:Q",
-        color="Player:N",
-        tooltip=["date", "Player", "Score"]
-    ).properties(
-        width=700,
-        height=400
-    )
-    st.altair_chart(line_chart)
+            if sport.lower() == "tennis":
+                df["t_win"] = df.apply(lambda row: 1 if (row.get("theo_score") or 0) > (row.get("denet_score") or 0) else 0, axis=1)
+                df["d_win"] = df.apply(lambda row: 1 if (row.get("denet_score") or 0) > (row.get("theo_score") or 0) else 0, axis=1)
+                df["t_cum"] = df["t_win"].cumsum()
+                df["d_cum"] = df["d_win"].cumsum()
+                chart_data = df[["date", "t_cum", "d_cum"]].copy()
+                chart_data = chart_data.melt(id_vars=["date"], value_vars=["t_cum", "d_cum"], var_name="Player", value_name="Score")
+                chart_data["Player"] = chart_data["Player"].map({"t_cum": "T", "d_cum": "D"})
+            else:
+                df["t_cum"] = df["theo_score"].cumsum()
+                df["d_cum"] = df["denet_score"].cumsum()
+                chart_data = df[["date", "t_cum", "d_cum"]].copy()
+                chart_data = chart_data.melt(id_vars=["date"], value_vars=["t_cum", "d_cum"], var_name="Player", value_name="Score")
+                chart_data["Player"] = chart_data["Player"].map({"t_cum": "T", "d_cum": "D"})
+
+            chart_data["date"] = pd.to_datetime(chart_data["date"])
+
+            st.subheader("Score Over Time")
+            line_chart = alt.Chart(chart_data).mark_line(point=True).encode(
+                x="date:T",
+                y="Score:Q",
+                color="Player:N",
+                tooltip=["date:T", "Player:N", "Score:Q"]
+            ).properties(
+                width=700,
+                height=400
+            )
+            st.altair_chart(line_chart)
