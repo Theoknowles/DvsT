@@ -167,3 +167,26 @@ for i, sport in enumerate(sports):
 
         st.write(f"🏆 Theo has won **{t_wins}** season(s)")
         st.write(f"🏆 Denet has won **{d_wins}** season(s)")
+    hide_streamlit_style = """
+        <style>
+        #MainMenu {visibility: hidden;}     /* Hides the hamburger menu */
+        header {visibility: hidden;}        /* Hides the top Streamlit header */
+        footer {visibility: hidden;}        /* Hide default footer */
+        .custom-footer {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            background-color: #f0f2f6;
+            color: #333;
+            text-align: center;
+            padding: 10px;
+            font-size: 14px;
+            border-top: 1px solid #ddd;
+        }
+        </style>
+        <div class="custom-footer">
+            🏆 D vs T Score Tracker | Made with <a href="https://streamlit.io" target="_blank">Streamlit</a>
+        </div>
+    """
+    st.markdown(hide_streamlit_style, unsafe_allow_html=True)
