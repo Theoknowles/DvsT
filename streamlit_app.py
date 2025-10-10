@@ -53,7 +53,7 @@ def fetch_current_season(sport):
         supabase_admin.table("season_tracker")
         .select("current_season")
         .eq("sport", sport)
-        .order("current_season", False)  # descending
+        .order("current_season", { ascending: false })  # descending
         .limit(1)
         .execute()
     )
