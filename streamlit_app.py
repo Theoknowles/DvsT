@@ -51,7 +51,7 @@ def fetch_current_season(sport):
     result = supabase_admin.table("season_tracker")\
         .select("current_season")\
         .eq("sport", sport)\
-        .order("current_season", desc=True)\
+        .order("current_season", ascending=False)\
         .limit(1)\
         .execute()
     data = result.data or []
@@ -65,21 +65,16 @@ def fetch_matches(sport, season=None):
     query = supabase.table("matches").select("*").eq("sport", sport)
     if season:
         query = query.eq("season", season)
-    result = query.order("date", desc=True).execute()
+    result = query.order("date", ascending=True).execute()
     return result.data or []
 
 def calculate_current_elo(sport, k=32, default_rating=1000):
-    """
-    Recalculate Elo from all historic matches for a given sport.
-    Returns the latest ratings for Theo and Denet.
-    """
-    # Fetch all matches for this sport, ordered by date
-    matches = supabase.table("matches").select("*").eq("sport", sport).order("date", "asc").execute().data or []
+    """Recalculate Elo from all historic matches for a given sport."""
+    result = supabase.table("matches").select("*").eq("sport", sport).order("date", ascending=True).execute()
+    matches = result.data or []
 
-    # Initialize ratings
     ratings = {"Theo": default_rating, "Denet": default_rating}
 
-    # Apply Elo formula sequentially
     for m in matches:
         theo_score = m.get("theo_score") or 0
         denet_score = m.get("denet_score") or 0
@@ -97,7 +92,7 @@ def calculate_current_elo(sport, k=32, default_rating=1000):
         ratings["Theo"] = round(ratings["Theo"] + k * (theo_actual - expected_theo))
         ratings["Denet"] = round(ratings["Denet"] + k * (denet_actual - expected_denet))
 
-    # Upsert Elo into Supabase
+    # Upsert Elo
     for player, rating in ratings.items():
         supabase_admin.table("elo_ratings").upsert(
             {"sport": sport, "player": player, "rating": rating},
@@ -136,7 +131,7 @@ for i, sport in enumerate(sports):
                     "denet_score": denet_score
                 }]).execute()
 
-                # Update Elo after inserting match
+                # Recompute Elo
                 new_theo, new_denet = calculate_current_elo(sport)
                 st.success(f"Match added! Elo updated (Theo: {new_theo}, Denet: {new_denet})")
 
@@ -148,10 +143,9 @@ for i, sport in enumerate(sports):
                 st.success(f"Season ended. New season is {new_season}")
                 current_season = new_season
 
-        # --- Fetch current season matches ---
+        # --- Fetch matches ---
         matches = fetch_matches(sport, current_season)
 
-        # --- Display table ---
         st.subheader("All Matches")
         if matches:
             df = pd.DataFrame([{
@@ -164,7 +158,7 @@ for i, sport in enumerate(sports):
         else:
             st.write("No matches recorded yet.")
 
-        # --- Current season score tracker ---
+        # --- Current season score ---
         st.subheader("Current Season Score Tracker")
         if sport.lower() == "tennis":
             t_total = sum(1 for m in matches if (m.get("theo_score") or 0) > (m.get("denet_score") or 0))
@@ -172,12 +166,11 @@ for i, sport in enumerate(sports):
         else:
             t_total = sum(m.get("theo_score") or 0 for m in matches)
             d_total = sum(m.get("denet_score") or 0 for m in matches)
-
         col1, col2 = st.columns(2)
         col1.metric(label="Theo Total Score", value=t_total)
         col2.metric(label="Denet Total Score", value=d_total)
 
-        # --- Current Elo ratings ---
+        # --- Elo ratings ---
         st.subheader("Elo Ratings")
         current_theo_elo, current_denet_elo = calculate_current_elo(sport)
         st.table([
@@ -185,7 +178,7 @@ for i, sport in enumerate(sports):
             {"player": "Denet", "rating": current_denet_elo}
         ])
 
-        # --- Season Wins Tracker ---
+        # --- Season wins tracker ---
         st.subheader("Season Wins Tracker")
         all_matches = fetch_matches(sport)
         season_totals = {}
@@ -200,18 +193,13 @@ for i, sport in enumerate(sports):
             season_totals[season]["Theo"] += t_score
             season_totals[season]["Denet"] += d_score
 
-        t_wins = 0
-        d_wins = 0
-        for season, scores in season_totals.items():
-            if scores["Theo"] > scores["Denet"]:
-                t_wins += 1
-            elif scores["Denet"] > scores["Theo"]:
-                d_wins += 1
+        t_wins = sum(1 for s in season_totals.values() if s["Theo"] > s["Denet"])
+        d_wins = sum(1 for s in season_totals.values() if s["Denet"] > s["Theo"])
 
         st.write(f"🏆 Theo has won **{t_wins}** season(s)")
         st.write(f"🏆 Denet has won **{d_wins}** season(s)")
 
-# --- Hide Streamlit default UI + custom footer ---
+# --- Hide Streamlit UI + custom footer ---
 hide_streamlit_style = """
     <style>
     #MainMenu {visibility: hidden;}     
