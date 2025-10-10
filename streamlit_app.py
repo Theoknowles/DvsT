@@ -69,12 +69,16 @@ def fetch_matches(sport, season=None):
     return matches
 
 def calculate_current_elo(sport, k=32, default_rating=1000):
-    """Recalculate Elo from all historic matches for a given sport."""
+    """Recalculate Elo from all historic matches safely and upsert into Supabase."""
+    # Fetch all matches for the sport
     result = supabase.table("matches").select("*").eq("sport", sport).execute()
     matches = result.data or []
 
+    # Initialize ratings
     ratings = {"Theo": default_rating, "Denet": default_rating}
 
+    # Process each match chronologically
+    matches.sort(key=lambda m: m.get("date") or "")
     for m in matches:
         theo_score = m.get("theo_score") or 0
         denet_score = m.get("denet_score") or 0
@@ -92,8 +96,24 @@ def calculate_current_elo(sport, k=32, default_rating=1000):
         ratings["Theo"] = round(ratings["Theo"] + k * (theo_actual - expected_theo))
         ratings["Denet"] = round(ratings["Denet"] + k * (denet_actual - expected_denet))
 
-    # Upsert Elo ratings
+    # --- Remove any duplicate rows in Elo table ---
+    duplicates = supabase_admin.table("elo_ratings")\
+        .select("id, sport, player")\
+        .eq("sport", sport)\
+        .execute().data or []
+
+    seen = set()
+    for row in duplicates:
+        key = (row.get("sport"), row.get("player"))
+        if key in seen:
+            supabase_admin.table("elo_ratings").delete().eq("id", row["id"]).execute()
+        else:
+            seen.add(key)
+
+    # --- Upsert Elo ratings safely ---
     for player, rating in ratings.items():
+        if player not in ["Theo", "Denet"]:
+            continue
         supabase_admin.table("elo_ratings").upsert(
             {"sport": sport, "player": player, "rating": rating},
             on_conflict=["sport", "player"]
