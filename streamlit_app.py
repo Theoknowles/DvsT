@@ -48,7 +48,6 @@ if st.session_state["admin_logged_in"]:
 
 # --- Helper functions ---
 def fetch_current_season(sport):
-    """Fetch maximum current_season for the sport using admin client (avoids RLS issues)."""
     result = supabase_admin.table("season_tracker")\
         .select("current_season")\
         .eq("sport", sport)\
@@ -56,7 +55,6 @@ def fetch_current_season(sport):
         .limit(1)\
         .execute()
     data = result.data or []
-
     if data:
         return data[0]["current_season"]
     else:
@@ -64,41 +62,49 @@ def fetch_current_season(sport):
         return 1
 
 def fetch_matches(sport, season=None):
-    """Fetch matches for a given sport and optionally a specific season."""
     query = supabase.table("matches").select("*").eq("sport", sport)
     if season:
         query = query.eq("season", season)
     result = query.order("date", desc=True).execute()
     return result.data or []
 
-def update_elo(sport, theo_score, denet_score, k=32):
-    """Update Elo ratings in Supabase after a match result."""
-    # Fetch current ratings
-    ratings = supabase_admin.table("elo_ratings").select("*").eq("sport", sport).execute().data
-    theo_rating = next((r["rating"] for r in ratings if r["player"] == "Theo"), 1000)
-    denet_rating = next((r["rating"] for r in ratings if r["player"] == "Denet"), 1000)
+def calculate_current_elo(sport, k=32, default_rating=1000):
+    """
+    Recalculate Elo from all historic matches for a given sport.
+    Returns the latest ratings for Theo and Denet.
+    """
+    # Fetch all matches for this sport, ordered by date
+    matches = supabase.table("matches").select("*").eq("sport", sport).order("date", "asc").execute().data or []
 
-    # Expected scores
-    expected_theo = 1 / (1 + 10 ** ((denet_rating - theo_rating) / 400))
-    expected_denet = 1 - expected_theo
+    # Initialize ratings
+    ratings = {"Theo": default_rating, "Denet": default_rating}
 
-    # Actual result
-    if theo_score > denet_score:
-        theo_actual, denet_actual = 1, 0
-    elif theo_score < denet_score:
-        theo_actual, denet_actual = 0, 1
-    else:
-        theo_actual, denet_actual = 0.5, 0.5
+    # Apply Elo formula sequentially
+    for m in matches:
+        theo_score = m.get("theo_score") or 0
+        denet_score = m.get("denet_score") or 0
 
-    # New ratings
-    theo_new = round(theo_rating + k * (theo_actual - expected_theo))
-    denet_new = round(denet_rating + k * (denet_actual - expected_denet))
+        expected_theo = 1 / (1 + 10 ** ((ratings["Denet"] - ratings["Theo"]) / 400))
+        expected_denet = 1 - expected_theo
 
-    # Save back to Supabase
-    supabase_admin.table("elo_ratings").update({"rating": theo_new}).eq("sport", sport).eq("player", "Theo").execute()
-    supabase_admin.table("elo_ratings").update({"rating": denet_new}).eq("sport", sport).eq("player", "Denet").execute()
+        if theo_score > denet_score:
+            theo_actual, denet_actual = 1, 0
+        elif theo_score < denet_score:
+            theo_actual, denet_actual = 0, 1
+        else:
+            theo_actual, denet_actual = 0.5, 0.5
 
-    return theo_new, denet_new
+        ratings["Theo"] = round(ratings["Theo"] + k * (theo_actual - expected_theo))
+        ratings["Denet"] = round(ratings["Denet"] + k * (denet_actual - expected_denet))
+
+    # Upsert Elo into Supabase
+    for player, rating in ratings.items():
+        supabase_admin.table("elo_ratings").upsert(
+            {"sport": sport, "player": player, "rating": rating},
+            on_conflict=["sport", "player"]
+        ).execute()
+
+    return ratings["Theo"], ratings["Denet"]
 
 # --- Sports tabs ---
 sports = ["Golf", "Driving", "Tennis"]
@@ -131,11 +137,10 @@ for i, sport in enumerate(sports):
                 }]).execute()
 
                 # Update Elo after inserting match
-                new_theo, new_denet = update_elo(sport, theo_score, denet_score)
+                new_theo, new_denet = calculate_current_elo(sport)
                 st.success(f"Match added! Elo updated (Theo: {new_theo}, Denet: {new_denet})")
 
             if st.button(f"End Season ({sport})"):
-                # Increment current season for the sport
                 new_season = current_season + 1
                 supabase_admin.table("season_tracker").update(
                     {"current_season": new_season}
@@ -174,20 +179,20 @@ for i, sport in enumerate(sports):
 
         # --- Current Elo ratings ---
         st.subheader("Elo Ratings")
-        elo = supabase.table("elo_ratings").select("*").eq("sport", sport).execute().data
-        if elo:
-            elo_df = pd.DataFrame(elo)[["player", "rating"]]
-            st.table(elo_df)
+        current_theo_elo, current_denet_elo = calculate_current_elo(sport)
+        st.table([
+            {"player": "Theo", "rating": current_theo_elo},
+            {"player": "Denet", "rating": current_denet_elo}
+        ])
 
         # --- Season Wins Tracker ---
         st.subheader("Season Wins Tracker")
-
         all_matches = fetch_matches(sport)
         season_totals = {}
         for m in all_matches:
             season = m.get("season")
             if season == current_season:
-                continue  # skip current season
+                continue
             t_score = m.get("theo_score") or 0
             d_score = m.get("denet_score") or 0
             if season not in season_totals:
@@ -202,7 +207,6 @@ for i, sport in enumerate(sports):
                 t_wins += 1
             elif scores["Denet"] > scores["Theo"]:
                 d_wins += 1
-            # Ties ignored
 
         st.write(f"🏆 Theo has won **{t_wins}** season(s)")
         st.write(f"🏆 Denet has won **{d_wins}** season(s)")
