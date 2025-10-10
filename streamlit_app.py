@@ -48,16 +48,15 @@ if st.session_state["admin_logged_in"]:
 
 # --- Helper functions ---
 def fetch_current_season(sport):
-    """Fetch maximum current_season for the sport using admin client."""
-    result = (
-        supabase_admin.table("season_tracker")
-        .select("current_season")
-        .eq("sport", sport)
-        .order("current_season", desc=True)  # descending
-        .limit(1)
+    """Fetch maximum current_season for the sport using admin client (avoids RLS issues)."""
+    result = supabase_admin.table("season_tracker")\
+        .select("current_season")\
+        .eq("sport", sport)\
+        .order("current_season", desc=True)\
+        .limit(1)\
         .execute()
-    )
     data = result.data or []
+
     if data:
         return data[0]["current_season"]
     else:
@@ -69,68 +68,8 @@ def fetch_matches(sport, season=None):
     query = supabase.table("matches").select("*").eq("sport", sport)
     if season:
         query = query.eq("season", season)
-    result = query.order("date", desc=True).execute()  # ascending
+    result = query.order("date", desc=True).execute()
     return result.data or []
-
-# --- Upsert Elo ratings for the sport ---
-def upsert_elo_ratings(sport, ratings):
-    """
-    ratings: dict like {"Theo": 1200, "Denet": 1200}
-    """
-    for player, rating in ratings.items():
-        supabase_admin.table("elo_ratings").upsert(
-            {
-                "sport": sport,
-                "player": player,
-                "rating": rating,
-            },
-            on_conflict="unique_sport_player"  # Use the unique constraint name
-        ).execute()
-
-def calculate_current_elo(sport, k=32, default_rating=1000):
-    """
-    Calculate Elo ratings from all historic matches for a sport
-    and upsert them safely into the elo_ratings table.
-    """
-    # Fetch all matches for the sport, ascending by date
-    matches = (
-        supabase.table("matches")
-        .select("*")
-        .eq("sport", sport)
-        .order("date", desc=True)
-        .execute()
-        .data or []
-    )
-
-    ratings = {"Theo": default_rating, "Denet": default_rating}
-
-    for m in matches:
-        theo_score = m.get("theo_score") or 0
-        denet_score = m.get("denet_score") or 0
-
-        expected_theo = 1 / (1 + 10 ** ((ratings["Denet"] - ratings["Theo"]) / 400))
-        expected_denet = 1 - expected_theo
-
-        if theo_score > denet_score:
-            theo_actual, denet_actual = 1, 0
-        elif theo_score < denet_score:
-            theo_actual, denet_actual = 0, 1
-        else:
-            theo_actual, denet_actual = 0.5, 0.5
-
-        ratings["Theo"] = round(ratings["Theo"] + k * (theo_actual - expected_theo))
-        ratings["Denet"] = round(ratings["Denet"] + k * (denet_actual - expected_denet))
-
-    # # Upsert into elo_ratings table
-    # for player, rating in ratings.items():
-    #     supabase_admin.table("elo_ratings").upsert(
-    #         {"sport": sport, "player": player, "rating": rating},
-    #         on_conflict=["sport", "player"]
-    #     ).execute()
-
-    upsert_elo_ratings(sport, ratings)
-
-    return ratings["Theo"], ratings["Denet"]
 
 # --- Sports tabs ---
 sports = ["Golf", "Driving", "Tennis"]
@@ -138,6 +77,7 @@ tabs = st.tabs(sports)
 
 for i, sport in enumerate(sports):
     with tabs[i]:
+        # --- Current season ---
         current_season = fetch_current_season(sport)
         st.subheader(f"{sport} - Current Season: {current_season}")
 
@@ -163,6 +103,7 @@ for i, sport in enumerate(sports):
                 st.success("Match added!")
 
             if st.button(f"End Season ({sport})"):
+                # Increment current season for the sport
                 new_season = current_season + 1
                 supabase_admin.table("season_tracker").update(
                     {"current_season": new_season}
@@ -170,8 +111,10 @@ for i, sport in enumerate(sports):
                 st.success(f"Season ended. New season is {new_season}")
                 current_season = new_season
 
-        # --- Display matches ---
+        # --- Fetch current season matches ---
         matches = fetch_matches(sport, current_season)
+
+        # --- Display table ---
         st.subheader("All Matches")
         if matches:
             df = pd.DataFrame([{
@@ -184,7 +127,7 @@ for i, sport in enumerate(sports):
         else:
             st.write("No matches recorded yet.")
 
-        # --- Current season score ---
+        # --- Current season score tracker ---
         st.subheader("Current Season Score Tracker")
         if sport.lower() == "tennis":
             t_total = sum(1 for m in matches if (m.get("theo_score") or 0) > (m.get("denet_score") or 0))
@@ -197,10 +140,53 @@ for i, sport in enumerate(sports):
         col1.metric(label="Theo Total Score", value=t_total)
         col2.metric(label="Denet Total Score", value=d_total)
 
-        # --- Elo Ratings ---
-        st.subheader("Elo Ratings")
-        current_theo_elo, current_denet_elo = calculate_current_elo(sport)
-        st.table([
-            {"player": "Theo", "rating": current_theo_elo},
-            {"player": "Denet", "rating": current_denet_elo}
-        ])
+        # --- Season Wins Tracker ---
+        st.subheader("Season Wins Tracker")
+
+        all_matches = fetch_matches(sport)
+        season_totals = {}
+        for m in all_matches:
+            season = m.get("season")
+            if season == current_season:
+                continue  # skip current season
+            t_score = m.get("theo_score") or 0
+            d_score = m.get("denet_score") or 0
+            if season not in season_totals:
+                season_totals[season] = {"Theo": 0, "Denet": 0}
+            season_totals[season]["Theo"] += t_score
+            season_totals[season]["Denet"] += d_score
+
+        t_wins = 0
+        d_wins = 0
+        for season, scores in season_totals.items():
+            if scores["Theo"] > scores["Denet"]:
+                t_wins += 1
+            elif scores["Denet"] > scores["Theo"]:
+                d_wins += 1
+            # Ties ignored
+
+        st.write(f"🏆 Theo has won **{t_wins}** season(s)")
+        st.write(f"🏆 Denet has won **{d_wins}** season(s)")
+    hide_streamlit_style = """
+        <style>
+        #MainMenu {visibility: hidden;}     /* Hides the hamburger menu */
+        header {visibility: hidden;}        /* Hides the top Streamlit header */
+        footer {visibility: hidden;}        /* Hide default footer */
+        .custom-footer {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            background-color: #f0f2f6;
+            color: #333;
+            text-align: center;
+            padding: 10px;
+            font-size: 14px;
+            border-top: 1px solid #ddd;
+        }
+        </style>
+        <div class="custom-footer">
+            🏆 D vs T Score Tracker | Made with <a href="https://streamlit.io" target="_blank">Streamlit</a>
+        </div>
+    """
+    st.markdown(hide_streamlit_style, unsafe_allow_html=True)
