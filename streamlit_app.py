@@ -72,6 +72,21 @@ def fetch_matches(sport, season=None):
     result = query.order("date", desc=True).execute()  # ascending
     return result.data or []
 
+# --- Upsert Elo ratings for the sport ---
+def upsert_elo_ratings(sport, ratings):
+    """
+    ratings: dict like {"Theo": 1200, "Denet": 1200}
+    """
+    for player, rating in ratings.items():
+        supabase_admin.table("elo_ratings").upsert(
+            {
+                "sport": sport,
+                "player": player,
+                "rating": rating,
+            },
+            on_conflict="unique_sport_player"  # Use the unique constraint name
+        ).execute()
+
 def calculate_current_elo(sport, k=32, default_rating=1000):
     """
     Calculate Elo ratings from all historic matches for a sport
@@ -106,12 +121,14 @@ def calculate_current_elo(sport, k=32, default_rating=1000):
         ratings["Theo"] = round(ratings["Theo"] + k * (theo_actual - expected_theo))
         ratings["Denet"] = round(ratings["Denet"] + k * (denet_actual - expected_denet))
 
-    # Upsert into elo_ratings table
-    for player, rating in ratings.items():
-        supabase_admin.table("elo_ratings").upsert(
-            {"sport": sport, "player": player, "rating": rating},
-            on_conflict=["sport", "player"]
-        ).execute()
+    # # Upsert into elo_ratings table
+    # for player, rating in ratings.items():
+    #     supabase_admin.table("elo_ratings").upsert(
+    #         {"sport": sport, "player": player, "rating": rating},
+    #         on_conflict=["sport", "player"]
+    #     ).execute()
+
+    upsert_elo_ratings(sport, ratings)
 
     return ratings["Theo"], ratings["Denet"]
 
