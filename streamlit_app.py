@@ -71,6 +71,35 @@ def fetch_matches(sport, season=None):
     result = query.order("date", desc=True).execute()
     return result.data or []
 
+def update_elo(sport, theo_score, denet_score, k=32):
+    """Update Elo ratings in Supabase after a match result."""
+    # Fetch current ratings
+    ratings = supabase_admin.table("elo_ratings").select("*").eq("sport", sport).execute().data
+    theo_rating = next((r["rating"] for r in ratings if r["player"] == "Theo"), 1000)
+    denet_rating = next((r["rating"] for r in ratings if r["player"] == "Denet"), 1000)
+
+    # Expected scores
+    expected_theo = 1 / (1 + 10 ** ((denet_rating - theo_rating) / 400))
+    expected_denet = 1 - expected_theo
+
+    # Actual result
+    if theo_score > denet_score:
+        theo_actual, denet_actual = 1, 0
+    elif theo_score < denet_score:
+        theo_actual, denet_actual = 0, 1
+    else:
+        theo_actual, denet_actual = 0.5, 0.5
+
+    # New ratings
+    theo_new = round(theo_rating + k * (theo_actual - expected_theo))
+    denet_new = round(denet_rating + k * (denet_actual - expected_denet))
+
+    # Save back to Supabase
+    supabase_admin.table("elo_ratings").update({"rating": theo_new}).eq("sport", sport).eq("player", "Theo").execute()
+    supabase_admin.table("elo_ratings").update({"rating": denet_new}).eq("sport", sport).eq("player", "Denet").execute()
+
+    return theo_new, denet_new
+
 # --- Sports tabs ---
 sports = ["Golf", "Driving", "Tennis"]
 tabs = st.tabs(sports)
@@ -100,7 +129,10 @@ for i, sport in enumerate(sports):
                     "theo_score": theo_score,
                     "denet_score": denet_score
                 }]).execute()
-                st.success("Match added!")
+
+                # Update Elo after inserting match
+                new_theo, new_denet = update_elo(sport, theo_score, denet_score)
+                st.success(f"Match added! Elo updated (Theo: {new_theo}, Denet: {new_denet})")
 
             if st.button(f"End Season ({sport})"):
                 # Increment current season for the sport
@@ -140,6 +172,13 @@ for i, sport in enumerate(sports):
         col1.metric(label="Theo Total Score", value=t_total)
         col2.metric(label="Denet Total Score", value=d_total)
 
+        # --- Current Elo ratings ---
+        st.subheader("Elo Ratings")
+        elo = supabase.table("elo_ratings").select("*").eq("sport", sport).execute().data
+        if elo:
+            elo_df = pd.DataFrame(elo)[["player", "rating"]]
+            st.table(elo_df)
+
         # --- Season Wins Tracker ---
         st.subheader("Season Wins Tracker")
 
@@ -167,26 +206,28 @@ for i, sport in enumerate(sports):
 
         st.write(f"🏆 Theo has won **{t_wins}** season(s)")
         st.write(f"🏆 Denet has won **{d_wins}** season(s)")
-    hide_streamlit_style = """
-        <style>
-        #MainMenu {visibility: hidden;}     /* Hides the hamburger menu */
-        header {visibility: hidden;}        /* Hides the top Streamlit header */
-        footer {visibility: hidden;}        /* Hide default footer */
-        .custom-footer {
-            position: fixed;
-            left: 0;
-            bottom: 0;
-            width: 100%;
-            background-color: #f0f2f6;
-            color: #333;
-            text-align: center;
-            padding: 10px;
-            font-size: 14px;
-            border-top: 1px solid #ddd;
-        }
-        </style>
-        <div class="custom-footer">
-            🏆 D vs T Score Tracker | Made with <a href="https://streamlit.io" target="_blank">Streamlit</a>
-        </div>
-    """
-    st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+# --- Hide Streamlit default UI + custom footer ---
+hide_streamlit_style = """
+    <style>
+    #MainMenu {visibility: hidden;}     
+    header {visibility: hidden;}        
+    footer {visibility: hidden;}        
+    .custom-footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #f0f2f6;
+        color: #333;
+        text-align: center;
+        padding: 10px;
+        font-size: 14px;
+        border-top: 1px solid #ddd;
+    }
+    </style>
+    <div class="custom-footer">
+        🏆 D vs T Score Tracker | Made with <a href="https://streamlit.io" target="_blank">Streamlit</a>
+    </div>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
