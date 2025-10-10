@@ -51,7 +51,7 @@ def fetch_current_season(sport):
     result = supabase_admin.table("season_tracker")\
         .select("current_season")\
         .eq("sport", sport)\
-        .order("current_season", ascending=False)\
+        .order("current_season", "desc")\
         .limit(1)\
         .execute()
     data = result.data or []
@@ -65,12 +65,12 @@ def fetch_matches(sport, season=None):
     query = supabase.table("matches").select("*").eq("sport", sport)
     if season:
         query = query.eq("season", season)
-    result = query.order("date", ascending=True).execute()
+    result = query.order("date", "asc").execute()
     return result.data or []
 
 def calculate_current_elo(sport, k=32, default_rating=1000):
     """Recalculate Elo from all historic matches for a given sport."""
-    result = supabase.table("matches").select("*").eq("sport", sport).order("date", ascending=True).execute()
+    result = supabase.table("matches").select("*").eq("sport", sport).order("date", "asc").execute()
     matches = result.data or []
 
     ratings = {"Theo": default_rating, "Denet": default_rating}
