@@ -48,29 +48,29 @@ if st.session_state["admin_logged_in"]:
 
 # --- Helper functions ---
 def fetch_current_season(sport):
-    result = supabase_admin.table("season_tracker")\
-        .select("current_season")\
-        .eq("sport", sport)\
-        .order("current_season", "desc")\
-        .limit(1)\
-        .execute()
+    """Fetch current season using Python-side max instead of .order()"""
+    result = supabase_admin.table("season_tracker").select("current_season").eq("sport", sport).execute()
     data = result.data or []
     if data:
-        return data[0]["current_season"]
+        return max(d["current_season"] for d in data)
     else:
         st.error(f"No season found for sport '{sport}'. Please create it manually in Supabase.")
         return 1
 
 def fetch_matches(sport, season=None):
+    """Fetch matches, optionally filtered by season"""
     query = supabase.table("matches").select("*").eq("sport", sport)
     if season:
         query = query.eq("season", season)
-    result = query.order("date", "asc").execute()
-    return result.data or []
+    result = query.execute()
+    matches = result.data or []
+    # Sort by date ascending in Python
+    matches.sort(key=lambda m: m.get("date") or "")
+    return matches
 
 def calculate_current_elo(sport, k=32, default_rating=1000):
     """Recalculate Elo from all historic matches for a given sport."""
-    result = supabase.table("matches").select("*").eq("sport", sport).order("date", "asc").execute()
+    result = supabase.table("matches").select("*").eq("sport", sport).execute()
     matches = result.data or []
 
     ratings = {"Theo": default_rating, "Denet": default_rating}
@@ -92,7 +92,7 @@ def calculate_current_elo(sport, k=32, default_rating=1000):
         ratings["Theo"] = round(ratings["Theo"] + k * (theo_actual - expected_theo))
         ratings["Denet"] = round(ratings["Denet"] + k * (denet_actual - expected_denet))
 
-    # Upsert Elo
+    # Upsert Elo ratings
     for player, rating in ratings.items():
         supabase_admin.table("elo_ratings").upsert(
             {"sport": sport, "player": player, "rating": rating},
@@ -131,7 +131,6 @@ for i, sport in enumerate(sports):
                     "denet_score": denet_score
                 }]).execute()
 
-                # Recompute Elo
                 new_theo, new_denet = calculate_current_elo(sport)
                 st.success(f"Match added! Elo updated (Theo: {new_theo}, Denet: {new_denet})")
 
