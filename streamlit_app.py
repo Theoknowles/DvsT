@@ -48,45 +48,47 @@ if st.session_state["admin_logged_in"]:
 
 # --- Helper functions ---
 def fetch_current_season(sport):
-    """Fetch current season using Python-side max instead of .order()"""
-    result = supabase_admin.table("season_tracker").select("current_season").eq("sport", sport).execute()
+    """Fetch maximum current_season for the sport using admin client."""
+    result = (
+        supabase_admin.table("season_tracker")
+        .select("current_season")
+        .eq("sport", sport)
+        .order("current_season", False)  # descending
+        .limit(1)
+        .execute()
+    )
     data = result.data or []
     if data:
-        return max(d["current_season"] for d in data)
+        return data[0]["current_season"]
     else:
         st.error(f"No season found for sport '{sport}'. Please create it manually in Supabase.")
         return 1
 
 def fetch_matches(sport, season=None):
-    """Fetch matches, optionally filtered by season"""
+    """Fetch matches for a given sport and optionally a specific season."""
     query = supabase.table("matches").select("*").eq("sport", sport)
     if season:
         query = query.eq("season", season)
-    result = query.execute()
-    matches = result.data or []
-    # Sort by date ascending in Python
-    matches.sort(key=lambda m: m.get("date") or "")
-    return matches
+    result = query.order("date", True).execute()  # ascending
+    return result.data or []
 
 def calculate_current_elo(sport, k=32, default_rating=1000):
     """
     Calculate Elo ratings from all historic matches for a sport
     and upsert them safely into the elo_ratings table.
     """
-    # Fetch all matches for the sport, ordered by date ascending
+    # Fetch all matches for the sport, ascending by date
     matches = (
         supabase.table("matches")
         .select("*")
         .eq("sport", sport)
-        .order("date", ascending=True)
+        .order("date", True)
         .execute()
         .data or []
     )
 
-    # Initialize ratings
     ratings = {"Theo": default_rating, "Denet": default_rating}
 
-    # Process each match chronologically
     for m in matches:
         theo_score = m.get("theo_score") or 0
         denet_score = m.get("denet_score") or 0
@@ -104,7 +106,7 @@ def calculate_current_elo(sport, k=32, default_rating=1000):
         ratings["Theo"] = round(ratings["Theo"] + k * (theo_actual - expected_theo))
         ratings["Denet"] = round(ratings["Denet"] + k * (denet_actual - expected_denet))
 
-    # --- Upsert Elo ratings safely ---
+    # Upsert into elo_ratings table
     for player, rating in ratings.items():
         supabase_admin.table("elo_ratings").upsert(
             {"sport": sport, "player": player, "rating": rating},
@@ -113,15 +115,12 @@ def calculate_current_elo(sport, k=32, default_rating=1000):
 
     return ratings["Theo"], ratings["Denet"]
 
-
-
 # --- Sports tabs ---
 sports = ["Golf", "Driving", "Tennis"]
 tabs = st.tabs(sports)
 
 for i, sport in enumerate(sports):
     with tabs[i]:
-        # --- Current season ---
         current_season = fetch_current_season(sport)
         st.subheader(f"{sport} - Current Season: {current_season}")
 
@@ -144,9 +143,7 @@ for i, sport in enumerate(sports):
                     "theo_score": theo_score,
                     "denet_score": denet_score
                 }]).execute()
-
-                new_theo, new_denet = calculate_current_elo(sport)
-                st.success(f"Match added! Elo updated (Theo: {new_theo}, Denet: {new_denet})")
+                st.success("Match added!")
 
             if st.button(f"End Season ({sport})"):
                 new_season = current_season + 1
@@ -156,9 +153,8 @@ for i, sport in enumerate(sports):
                 st.success(f"Season ended. New season is {new_season}")
                 current_season = new_season
 
-        # --- Fetch matches ---
+        # --- Display matches ---
         matches = fetch_matches(sport, current_season)
-
         st.subheader("All Matches")
         if matches:
             df = pd.DataFrame([{
@@ -179,60 +175,15 @@ for i, sport in enumerate(sports):
         else:
             t_total = sum(m.get("theo_score") or 0 for m in matches)
             d_total = sum(m.get("denet_score") or 0 for m in matches)
+
         col1, col2 = st.columns(2)
         col1.metric(label="Theo Total Score", value=t_total)
         col2.metric(label="Denet Total Score", value=d_total)
 
-        # --- Elo ratings ---
+        # --- Elo Ratings ---
         st.subheader("Elo Ratings")
         current_theo_elo, current_denet_elo = calculate_current_elo(sport)
         st.table([
             {"player": "Theo", "rating": current_theo_elo},
             {"player": "Denet", "rating": current_denet_elo}
         ])
-
-        # --- Season wins tracker ---
-        st.subheader("Season Wins Tracker")
-        all_matches = fetch_matches(sport)
-        season_totals = {}
-        for m in all_matches:
-            season = m.get("season")
-            if season == current_season:
-                continue
-            t_score = m.get("theo_score") or 0
-            d_score = m.get("denet_score") or 0
-            if season not in season_totals:
-                season_totals[season] = {"Theo": 0, "Denet": 0}
-            season_totals[season]["Theo"] += t_score
-            season_totals[season]["Denet"] += d_score
-
-        t_wins = sum(1 for s in season_totals.values() if s["Theo"] > s["Denet"])
-        d_wins = sum(1 for s in season_totals.values() if s["Denet"] > s["Theo"])
-
-        st.write(f"🏆 Theo has won **{t_wins}** season(s)")
-        st.write(f"🏆 Denet has won **{d_wins}** season(s)")
-
-# --- Hide Streamlit UI + custom footer ---
-hide_streamlit_style = """
-    <style>
-    #MainMenu {visibility: hidden;}     
-    header {visibility: hidden;}        
-    footer {visibility: hidden;}        
-    .custom-footer {
-        position: fixed;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        background-color: #f0f2f6;
-        color: #333;
-        text-align: center;
-        padding: 10px;
-        font-size: 14px;
-        border-top: 1px solid #ddd;
-    }
-    </style>
-    <div class="custom-footer">
-        🏆 D vs T Score Tracker | Made with <a href="https://streamlit.io" target="_blank">Streamlit</a>
-    </div>
-"""
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
