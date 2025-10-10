@@ -69,7 +69,7 @@ def fetch_matches(sport, season=None):
     query = supabase.table("matches").select("*").eq("sport", sport)
     if season:
         query = query.eq("season", season)
-    result = query.order("date", True).execute()  # ascending
+    result = query.order("date", desc=True).execute()  # ascending
     return result.data or []
 
 def calculate_current_elo(sport, k=32, default_rating=1000):
@@ -82,7 +82,7 @@ def calculate_current_elo(sport, k=32, default_rating=1000):
         supabase.table("matches")
         .select("*")
         .eq("sport", sport)
-        .order("date", True)
+        .order("date", desc=True)
         .execute()
         .data or []
     )
